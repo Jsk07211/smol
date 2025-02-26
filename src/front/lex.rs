@@ -106,13 +106,58 @@ impl<'input> Lexer<'input> {
     /// - Some(token) where the token is the next token.
     /// - Some(Error) if none of the recognizers work, i.e. if there is a lexer error.
     pub fn next<'a>(&'a mut self) -> Option<Token<'input>> {
-        todo!()
+        // We borrow self for a shorter period of time, so we include 'input to ensure the tokens live long enough
+
+        // We want to skip the whitespace before we do lexing
+        self.skip_whitespace();
+
+        if self.end_of_input() {
+            return None;
+        }
+
+        // This language has no ambiguity, at most one of them will pass
+        // find has boolean indicator, find_map 
+        // Imperative(?) implementation
+        // let (kind, len) = self
+        //     .matchers
+        //     .iter()
+        //     // (Regex, TokenKind) -> Option<...> - regex find says if there is a match, calculate, otherwise return None (find_map handles that)
+        //     .find_map(|(re, kind)| re.find(&self.input[self.pos..]).map(|m| (*kind, m.len())))
+        //     .unwrap_or((Error, 1));
+
+        // Iterative implementation
+        let mut kind = Error;
+        let mut len = 1;
+
+        for (re, kind_for_re) in &self.matchers {
+            if let Some(m) = re.find(&self.input[self.pos..]) {
+                // If there is a match, update the default value
+                kind = *kind_for_re;
+                len = m.len();
+                break;
+            }
+        }
+
+        let token = Token {
+            kind, text: &self.input[self.pos..(self.pos + len)]
+        };
+
+        self.pos += len;
+
+        Some(token)
     }
 }
 
 /// Read all the tokens from input
 pub fn get_tokens(input: &str) -> Vec<Token> {
-    todo!()
+    let mut lexer = Lexer::new(input);
+
+    let mut tokens = Vec::new();
+    while let Some(token) = lexer.next() {
+        tokens.push(token);
+    }
+
+    tokens
 }
 
 #[cfg(test)]
