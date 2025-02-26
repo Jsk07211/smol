@@ -44,21 +44,29 @@ impl<'a> Parser<'a> {
         Parser { tokens }
     }
 
+    // Fetch the next token without consuming
+    //
+    // Fails at the end of the input
     fn peek(&self) -> Option<Token> {
         self.tokens.last().copied()
     }
 
+    // Get token and consume immediately
     fn next(&mut self) -> ParseResult<Token> {
         self.tokens
             .pop()
             .ok_or(ParseError("Unexpected end of input.".to_owned()))
     }
 
+    // Extension of peek: Check if next token is what I want without consuming it
     fn next_is(&self, kind: TokenKind) -> bool {
         self.peek().map(|t| t.kind == kind).unwrap_or(false)
     }
 
     // Consume the token of given kind if able, return whether it is consumed
+
+    // (e, e, e) -> while eat(comma) { read expr; build AST; } expect(RParen)?; (throw away upon failure)
+    // If it fails, can handle the failure
     fn eat(&mut self, kind: TokenKind) -> bool {
         if self.next_is(kind) {
             self.tokens.pop();
@@ -85,16 +93,40 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_program(&mut self) -> ParseResult<Program> {
-        todo!()
+        let mut stmts = vec![];
+
+        // while !self.tokens.is_empty() {
+        //     // Recogniser - Recognises when it fails but does not build an AST
+        //     // For error handling: breaks if Err
+        //     self.parse_stmt()?;
+        // }
+        while !self.tokens.is_empty() {
+            stmts.push(self.parse_stmt()?);
+        }
+
+        Ok(Program { stmts })
     }
 
     fn parse_stmt(&mut self) -> ParseResult<Stmt> {
+        // Where should my cursor be?
+        // println!({:?}, parser.peek());
         let tok = self.next()?;
+
+        // No epsilon case for this grammar
         match tok.kind {
-            TokenKind::Assign => todo!(),
-            TokenKind::Print => todo!(),
-            TokenKind::Read => todo!(),
-            TokenKind::If => todo!(),
+            TokenKind::Assign => {
+                let id = id(self.expect(TokenKind::Id)?.text);
+                let exp = self.parse_expr()?;
+
+                Ok(Stmt::Assign(id, exp))
+            }
+            TokenKind::Print => Ok(Stmt::Print(self.parse_expr()?)),
+            TokenKind::Read => Ok(Stmt::Read(id(self.expect(TokenKind::Id)?.text))),
+            TokenKind::If => Ok(Stmt::If {
+                guard: self.parse_expr()?,
+                tt: self.parse_block()?,
+                ff: self.parse_block()?,
+            }),
             _ => Err(ParseError(format!(
                 "Expected start of a statement, found {}",
                 tok.text
@@ -105,10 +137,18 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self) -> ParseResult<Vec<Stmt>> {
         let mut stmts = vec![];
 
-        self.expect(TokenKind::LBrace)?;
+        self.expect(TokenKind::LBrace)?; // Immediately fails if it does not start with {
         while !self.eat(TokenKind::RBrace) {
+            // Read until I hit a }; Eat consumes if able (Will only consume RBrace)
             stmts.push(self.parse_stmt()?);
         }
+
+        // Equivalent to above, except we split eat command into next_is() and expect()
+        // self.expect(TokenKind::LBrace)?;            // Immediately fails if it does not start with {
+        // while !self.next_is(TokenKind::RBrace) {    // Read until I hit a }
+        //     stmts.push(self.parse_stmt()?);
+        // }
+        // self.expect(TokenKind::RBrace);
 
         Ok(stmts)
     }
@@ -119,14 +159,36 @@ impl<'a> Parser<'a> {
         let tok = self.next()?;
 
         match tok.kind {
-            TokenKind::Id => todo!(),
-            TokenKind::Num => todo!(),
-            TokenKind::Plus => todo!(),
-            TokenKind::Minus => todo!(),
-            TokenKind::Mul => todo!(),
-            TokenKind::Div => todo!(),
-            TokenKind::Lt => todo!(),
-            TokenKind::Tilde => todo!(),
+            // Eg. kind: Id, text: "x"; We don't want to constantly compare text though because it is very slow, so we compare ptrs (numbers)
+            TokenKind::Id => Ok(Var(id(tok.text))),
+            // We know this unwrap cannot fail, otherwise the parser is broken
+            TokenKind::Num => Ok(Const(tok.text.parse::<i64>().unwrap())),
+            TokenKind::Plus => Ok(BinOp {
+                op: BOp::Add,
+                lhs: Box::new(self.parse_expr()?),
+                rhs: Box::new(self.parse_expr()?),
+            }),
+            TokenKind::Minus => Ok(BinOp {
+                op: BOp::Sub,
+                lhs: Box::new(self.parse_expr()?),
+                rhs: Box::new(self.parse_expr()?),
+            }),
+            TokenKind::Mul => Ok(BinOp {
+                op: BOp::Mul,
+                lhs: Box::new(self.parse_expr()?),
+                rhs: Box::new(self.parse_expr()?),
+            }),
+            TokenKind::Div => Ok(BinOp {
+                op: BOp::Div,
+                lhs: Box::new(self.parse_expr()?),
+                rhs: Box::new(self.parse_expr()?),
+            }),
+            TokenKind::Lt => Ok(BinOp {
+                op: BOp::Lt,
+                lhs: Box::new(self.parse_expr()?),
+                rhs: Box::new(self.parse_expr()?),
+            }),
+            TokenKind::Tilde => Ok(Negate(Box::new(self.parse_expr()?))),
             _ => Err(ParseError(format!(
                 "Expected start of a statement, found {}",
                 tok.text
@@ -305,6 +367,8 @@ mod tests {
 
     #[test]
     fn death_test_print() {
+        // After $print, we call parse_expr which fails because there is no expr to parse
+        // Only the main computer binary should crash/panic; the rest should return an error
         assert!(parse("$print").is_err());
     }
 

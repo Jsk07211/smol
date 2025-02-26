@@ -116,7 +116,7 @@ impl<'input> Lexer<'input> {
         }
 
         // This language has no ambiguity, at most one of them will pass
-        // find has boolean indicator, find_map 
+        // find has boolean indicator, find_map
         // Imperative(?) implementation
         // let (kind, len) = self
         //     .matchers
@@ -139,7 +139,8 @@ impl<'input> Lexer<'input> {
         }
 
         let token = Token {
-            kind, text: &self.input[self.pos..(self.pos + len)]
+            kind,
+            text: &self.input[self.pos..(self.pos + len)],
         };
 
         self.pos += len;
