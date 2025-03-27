@@ -40,12 +40,13 @@ impl TvEntry {
 
 // Lowering data
 struct Lower {
+    // variables in scode
     decl: Set<Id>,
     // translation vector
     tv: Vec<TvEntry>,
-    // for creating fresh locals
+    // for creating fresh locals (counter for locals)
     fresh_ctr: i64,
-    // for creating fresh block labels
+    // for creating fresh block labels (counter for basic blocks - this is for labels I think)
     bb_ctr: i64,
 }
 
@@ -80,8 +81,10 @@ impl Lower {
     }
 
     fn lower_stmt(&mut self, stmt: Stmt) {
+        // Recursive traversal of expr
         match stmt {
             Stmt::Assign(dst, e) => {
+                // Ensure we have id declared
                 self.add_decl(dst);
                 let src = self.lower_expr(e);
                 self.tv.push(Inner(Instruction::Copy { dst, src }));
@@ -91,11 +94,34 @@ impl Lower {
                 self.tv.push(Inner(Instruction::Print(x)));
             }
             Stmt::Read(x) => {
+                // Ensure we have id declared
                 self.add_decl(x);
                 self.tv.push(Inner(Instruction::Read(x)));
             }
             Stmt::If { guard, tt, ff } => {
-                todo!()
+                let lbl_tt = self.mk_label();
+                let lbl_ff = self.mk_label();
+                let lbl_join = self.mk_label(); // For smol, they will always join b/c no ret
+                let guard = self.lower_expr(guard);
+
+                // tv stands for transition vector
+                self.tv.push(Term(Terminator::Branch { guard, tt: lbl_tt, ff: lbl_ff }));
+
+                // If tt diverges, don't generate this
+                self.tv.push(Label(lbl_tt));
+                for stmt in tt {
+                    self.lower_stmt(stmt);
+                }
+                self.tv.push(Term(Terminator::Jump(lbl_join)));
+
+                // If ff diverges, don't generate this
+                self.tv.push(Label(lbl_ff));
+                for stmt in ff {
+                    self.lower_stmt(stmt);
+                }
+                self.tv.push(Term(Terminator::Jump(lbl_join)));
+
+                self.tv.push(Label(lbl_join));
             },
         }
     }
@@ -108,6 +134,8 @@ impl Lower {
             }
             Expr::Const(n) => {
                 // this is not as good as the IR generation I covered.
+                // We should keep track of constants somewhere and create them at the beginning
+                // smol just keeps creating it every single time instead of reusing
                 let dst = self.mk_var("_const");
                 self.tv.push(Inner(Instruction::Const { dst, src: n }));
                 dst
@@ -140,3 +168,8 @@ impl Lower {
 fn construct_cfg(tv: Vec<TvEntry>) -> Map<Id, Block> {
     todo!()
 }
+
+
+// While get label, get inst and put under this label
+// Next thing has to be a terminal
+// Push that block into our hashmap and go into the next loop
